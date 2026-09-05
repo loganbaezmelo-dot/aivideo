@@ -19,15 +19,15 @@
 <body>
 
 <div class="card">
-  <h2>Generate AI Video</h2>
+  <h2>Generate Free AI Video</h2>
   <label for="prompt">Prompt:</label>
-  <input type="text" id="prompt" placeholder="A panda walking in a cyber city..." />
+  <input type="text" id="prompt" placeholder="A futuristic car speeding through rainy Tokyo neon streets..." />
 
   <button id="genBtn" onclick="generateVideo()">Generate Video</button>
 
   <div id="statusBox" class="box status"></div>
   <div id="errorBox" class="box error"></div>
-  <video id="outputVideo" controls autoplay loop></video>
+  <video id="outputVideo" controls autoplay loop playsinline></video>
 </div>
 
 <script>
@@ -48,24 +48,26 @@ async function generateVideo() {
   }
 
   btn.disabled = true;
-  statusBox.innerText = "Generating video on backend... this takes 1-2 minutes ⏳";
+  statusBox.innerText = "Generating video with Pollinations... please wait 30-60 seconds ⏳";
   statusBox.style.display = "block";
 
   try {
-    const res = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt })
-    });
+    // Generate a random seed to prevent caching identical prompts
+    const seed = Math.floor(Math.random() * 1000000);
+    const encodedPrompt = encodeURIComponent(prompt);
+    
+    // Pollinations video endpoint
+    const videoEndpoint = `https://image.pollinations.ai/prompt/${encodedPrompt}?model=video&seed=${seed}`;
 
+    const res = await fetch(videoEndpoint);
+
+    // Specific Rate Limit check
     if (res.status === 429) {
-      const data = await res.json();
-      throw new Error(data.error || "Rate limit reached for this free API! 😭");
+      throw new Error("Rate limit hit on Pollinations! Free servers are currently overloaded. Try again shortly 😭💀");
     }
 
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `Error status: ${res.status}`);
+      throw new Error(`Pollinations API returned status: ${res.status}`);
     }
 
     const blob = await res.blob();
