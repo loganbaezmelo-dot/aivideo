@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Free AI Video Generator</title>
+  <style>
+    body { font-family: sans-serif; background: #0b0f19; color: #f8fafc; display: flex; justify-content: center; padding: 40px 16px; margin: 0; }
+    .card { width: 100%; max-width: 500px; background: #1e293b; padding: 24px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    input, button { width: 100%; padding: 12px; margin: 8px 0 16px 0; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
+    button { background: #2563eb; font-weight: bold; cursor: pointer; border: none; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    .box { padding: 12px; border-radius: 6px; display: none; margin-top: 12px; font-size: 14px; }
+    .error { background: #450a0a; color: #f87171; border: 1px solid #991b1b; }
+    .status { background: #172554; color: #93c5fd; border: 1px solid #1e40af; }
+    video { width: 100%; margin-top: 16px; border-radius: 6px; display: none; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Generate AI Video</h2>
+  <label for="prompt">Prompt:</label>
+  <input type="text" id="prompt" placeholder="A panda walking in a cyber city..." />
+
+  <button id="genBtn" onclick="generateVideo()">Generate Video</button>
+
+  <div id="statusBox" class="box status"></div>
+  <div id="errorBox" class="box error"></div>
+  <video id="outputVideo" controls autoplay loop></video>
+</div>
+
+<script>
+async function generateVideo() {
+  const prompt = document.getElementById("prompt").value.trim();
+  const btn = document.getElementById("genBtn");
+  const statusBox = document.getElementById("statusBox");
+  const errorBox = document.getElementById("errorBox");
+  const video = document.getElementById("outputVideo");
+
+  errorBox.style.display = "none";
+  video.style.display = "none";
+
+  if (!prompt) {
+    errorBox.innerText = "Please type a prompt first! 😭";
+    errorBox.style.display = "block";
+    return;
+  }
+
+  btn.disabled = true;
+  statusBox.innerText = "Generating video on backend... this takes 1-2 minutes ⏳";
+  statusBox.style.display = "block";
+
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt })
+    });
+
+    if (res.status === 429) {
+      const data = await res.json();
+      throw new Error(data.error || "Rate limit reached for this free API! 😭");
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Error status: ${res.status}`);
+    }
+
+    const blob = await res.blob();
+    const videoUrl = URL.createObjectURL(blob);
+
+    statusBox.style.display = "none";
+    video.src = videoUrl;
+    video.style.display = "block";
+
+  } catch (err) {
+    statusBox.style.display = "none";
+    errorBox.innerText = err.message;
+    errorBox.style.display = "block";
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
