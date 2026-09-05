@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fast Flipbook Video</title>
+  <title>Flipbook AI Video</title>
   <style>
     body {
       font-family: sans-serif;
@@ -80,11 +80,11 @@
 <body>
 
 <div class="card">
-  <h2>Fast Parallel Flipbook ⚡</h2>
+  <h2>Smooth AI Flipbook 🎬</h2>
   <label for="prompt">Prompt:</label>
-  <input type="text" id="prompt" placeholder="A flaming meteor falling towards an ocean..." />
+  <input type="text" id="prompt" placeholder="A burning meteor crashing into the sea..." />
 
-  <button id="genBtn" onclick="generateParallel()">Generate Turbo (Parallel)</button>
+  <button id="genBtn" onclick="generateSmartPipeline()">Generate Video</button>
 
   <div id="statusBox" class="box status"></div>
   <div id="errorBox" class="box error"></div>
@@ -93,7 +93,7 @@
 
   <div id="controlsBox" class="controls">
     <label for="fpsSlider">Speed:</label>
-    <input type="range" id="fpsSlider" min="1" max="10" value="3" oninput="updateSpeed(this.value)" />
+    <input type="range" id="fpsSlider" min="1" max="8" value="3" oninput="updateSpeed(this.value)" />
     <span id="fpsVal">3 FPS</span>
   </div>
 </div>
@@ -102,7 +102,7 @@
 let frames = [];
 let animInterval = null;
 let currentFrameIndex = 0;
-let fps = 3; // Defaulting to 3 FPS so it doesn't give you whiplash 😭
+let fps = 3;
 
 function updateSpeed(val) {
   fps = parseInt(val);
@@ -116,7 +116,6 @@ function startPlayback() {
   const ctx = canvas.getContext("2d");
 
   animInterval = setInterval(() => {
-    // Only play frames that have actually loaded
     const readyFrames = frames.filter(f => f !== null);
     if (readyFrames.length === 0) return;
 
@@ -127,32 +126,49 @@ function startPlayback() {
   }, 1000 / fps);
 }
 
-async function fetchSingleFrame(prompt, seed, frameIndex, totalFrames) {
-  const encodedPrompt = encodeURIComponent(`${prompt}, sequential motion frame ${frameIndex + 1}`);
+// Helper to pause execution
+const wait = (ms) => new Promise(res => setTimeout(res, ms));
+
+async function fetchFrameWithBackoff(prompt, seed, frameIndex, retries = 2) {
+  const encodedPrompt = encodeURIComponent(`${prompt}, frame ${frameIndex + 1}`);
   const frameUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${seed}&width=512&height=512&nologo=true`;
 
-  const res = await fetch(frameUrl);
-  if (res.status === 429) {
-    throw new Error("Rate limit hit on Pollinations! 😭💀");
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(frameUrl);
+
+      if (res.status === 429) {
+        if (attempt < retries) {
+          // Back off for 2.5 seconds and try again
+          await wait(2500);
+          continue;
+        }
+        throw new Error("Rate limit hit on Pollinations! Free server queue is full right now 😭💀");
+      }
+
+      if (!res.ok) {
+        throw new Error(`API failed with status ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(blob);
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Image decode failed"));
+        img.src = objectUrl;
+      });
+
+      return img;
+    } catch (err) {
+      if (attempt === retries) throw err;
+      await wait(2000);
+    }
   }
-  if (!res.ok) {
-    throw new Error(`Frame ${frameIndex + 1} failed (Status: ${res.status})`);
-  }
-
-  const blob = await res.blob();
-  const img = new Image();
-  const objectUrl = URL.createObjectURL(blob);
-
-  await new Promise((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = () => reject(new Error(`Failed to decode frame ${frameIndex + 1}`));
-    img.src = objectUrl;
-  });
-
-  return img;
 }
 
-async function generateParallel() {
+async function generateSmartPipeline() {
   const prompt = document.getElementById("prompt").value.trim();
   const btn = document.getElementById("genBtn");
   const statusBox = document.getElementById("statusBox");
@@ -171,35 +187,34 @@ async function generateParallel() {
     return;
   }
 
-  const totalFrames = 6;
-  frames = new Array(totalFrames).fill(null);
+  // 4 frames avoids triggering the spam filter while keeping a smooth loop
+  const totalFrames = 4;
+  frames = [];
   btn.disabled = true;
-  statusBox.innerText = `Firing 6 parallel requests to GPU... 🚀`;
   statusBox.style.display = "block";
 
   const baseSeed = Math.floor(Math.random() * 10000);
-  let completedCount = 0;
 
   try {
-    // Launch all 6 network requests simultaneously
-    const framePromises = Array.from({ length: totalFrames }, (_, i) => {
-      const frameSeed = baseSeed + (i * 2);
-      return fetchSingleFrame(prompt, frameSeed, i, totalFrames)
-        .then((img) => {
-          frames[i] = img;
-          completedCount++;
-          statusBox.innerText = `Downloaded ${completedCount}/${totalFrames} frames simultaneously... ⚡`;
-          
-          // Show canvas immediately as soon as the first frame lands
-          if (completedCount === 1) {
-            canvas.style.display = "block";
-            controlsBox.style.display = "flex";
-            startPlayback();
-          }
-        });
-    });
+    for (let i = 0; i < totalFrames; i++) {
+      statusBox.innerText = `Fetching frame ${i + 1} of ${totalFrames}... ⏳`;
+      
+      const frameSeed = baseSeed + (i * 3);
+      const img = await fetchFrameWithBackoff(prompt, frameSeed, i);
+      frames.push(img);
 
-    await Promise.all(framePromises);
+      // Start playback as soon as 2 frames arrive so there's zero dead waiting time
+      if (frames.length === 2) {
+        canvas.style.display = "block";
+        controlsBox.style.display = "flex";
+        startPlayback();
+      }
+
+      // Small 400ms breather between calls so their server doesn't think it's a bot attack
+      if (i < totalFrames - 1) {
+        await wait(400);
+      }
+    }
 
     statusBox.innerText = "All frames loaded!";
     setTimeout(() => { statusBox.style.display = "none"; }, 1500);
@@ -215,3 +230,4 @@ async function generateParallel() {
 </script>
 </body>
 </html>
+
