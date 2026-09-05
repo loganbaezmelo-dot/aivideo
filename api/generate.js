@@ -7,14 +7,17 @@ export default async function handler(req, res) {
   const HF_TOKEN = process.env.HF_TOKEN;
 
   if (!HF_TOKEN) {
-    console.error("CRITICAL: HF_TOKEN is undefined in process.env!");
-    return res.status(500).json({ error: 'HF_TOKEN environment variable is missing in Vercel!' });
+    return res.status(500).json({ error: 'HF_TOKEN environment variable is missing on Vercel! 💀' });
+  }
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'Please provide a prompt! 😭' });
   }
 
   try {
-    // Testing HF connection
+    // New Hugging Face router endpoint
     const hfResponse = await fetch(
-      'https://api-inference.huggingface.co/models/damo-vilab/text-to-video-ms-1.7b',
+      'https://router.huggingface.co/hf-inference/models/damo-vilab/text-to-video-ms-1.7b',
       {
         method: 'POST',
         headers: {
@@ -25,17 +28,21 @@ export default async function handler(req, res) {
       }
     );
 
-    const status = hfResponse.status;
-    console.log("HF Response Status:", status);
+    // Rate Limit or Quota Exceeded
+    if (hfResponse.status === 429) {
+      return res.status(429).json({ error: 'Rate limit hit on Hugging Face! Free calls exhausted for now 😭💀' });
+    }
 
-    if (status === 429) {
-      return res.status(429).json({ error: 'Rate limit hit on Hugging Face 😭' });
+    // Model Warming Up
+    if (hfResponse.status === 503) {
+      return res.status(503).json({ error: 'Model is warming up on Hugging Face GPU. Wait ~60s and try again!' });
     }
 
     if (!hfResponse.ok) {
-      const errText = await hfResponse.text();
-      console.error("HF Error Body:", errText);
-      return res.status(status).json({ error: `Hugging Face error (${status}): ${errText}` });
+      const errText = await hfResponse.text().catch(() => '');
+      return res.status(hfResponse.status).json({ 
+        error: `Hugging Face Error (${hfResponse.status}): ${errText || hfResponse.statusText}` 
+      });
     }
 
     const arrayBuffer = await hfResponse.arrayBuffer();
@@ -43,10 +50,9 @@ export default async function handler(req, res) {
     return res.status(200).send(Buffer.from(arrayBuffer));
 
   } catch (err) {
-    console.error("FETCH FAILED ERROR DETAILS:", err);
     return res.status(500).json({ 
-      error: `Internal Fetch Failed: ${err.message}`, 
-      cause: err.cause ? String(err.cause) : undefined 
+      error: `Network Fetch Error: ${err.message}`,
+      cause: err.cause ? String(err.cause) : undefined
     });
   }
 }
