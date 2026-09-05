@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Free AI Video Generator</title>
+  <title>Flipbook AI Video Generator</title>
   <style>
     body {
       font-family: sans-serif;
@@ -60,84 +60,135 @@
       color: #93c5fd;
       border: 1px solid #1e40af;
     }
-    video {
+    canvas {
       width: 100%;
       margin-top: 16px;
       border-radius: 6px;
+      background: #000;
       display: none;
     }
+    .controls {
+      display: none;
+      margin-top: 10px;
+      align-items: center;
+      gap: 10px;
+    }
+    .controls label { font-size: 12px; color: #94a3b8; }
+    .controls input[type="range"] { margin: 0; flex: 1; }
   </style>
 </head>
 <body>
 
 <div class="card">
-  <h2>Generate Free AI Video</h2>
+  <h2>AI Video via Frame Flipbook 🎬</h2>
   <label for="prompt">Prompt:</label>
-  <input type="text" id="prompt" placeholder="A neon car speeding through rainy Tokyo..." />
+  <input type="text" id="prompt" placeholder="A flaming meteor falling towards an ocean..." />
 
-  <button id="genBtn" onclick="generateVideo()">Generate Video</button>
+  <button id="genBtn" onclick="generateFrameVideo()">Generate Video (6 Frames)</button>
 
   <div id="statusBox" class="box status"></div>
   <div id="errorBox" class="box error"></div>
-  <video id="outputVideo" controls autoplay loop playsinline></video>
+
+  <canvas id="stageCanvas" width="512" height="512"></canvas>
+
+  <div id="controlsBox" class="controls">
+    <label for="fpsSlider">Speed:</label>
+    <input type="range" id="fpsSlider" min="2" max="15" value="6" oninput="updateSpeed(this.value)" />
+    <span id="fpsVal">6 FPS</span>
+  </div>
 </div>
 
 <script>
-async function generateVideo() {
+let frames = [];
+let animInterval = null;
+let currentFrameIndex = 0;
+let fps = 6;
+
+function updateSpeed(val) {
+  fps = parseInt(val);
+  document.getElementById("fpsVal").innerText = `${fps} FPS`;
+  if (frames.length > 0) {
+    startPlayback();
+  }
+}
+
+function startPlayback() {
+  if (animInterval) clearInterval(animInterval);
+  const canvas = document.getElementById("stageCanvas");
+  const ctx = canvas.getContext("2d");
+
+  animInterval = setInterval(() => {
+    if (frames.length === 0) return;
+    const img = frames[currentFrameIndex];
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    currentFrameIndex = (currentFrameIndex + 1) % frames.length;
+  }, 1000 / fps);
+}
+
+async function generateFrameVideo() {
   const prompt = document.getElementById("prompt").value.trim();
   const btn = document.getElementById("genBtn");
   const statusBox = document.getElementById("statusBox");
   const errorBox = document.getElementById("errorBox");
-  const video = document.getElementById("outputVideo");
+  const canvas = document.getElementById("stageCanvas");
+  const controlsBox = document.getElementById("controlsBox");
 
   errorBox.style.display = "none";
-  video.style.display = "none";
+  canvas.style.display = "none";
+  controlsBox.style.display = "none";
+  if (animInterval) clearInterval(animInterval);
+  frames = [];
 
   if (!prompt) {
-    errorBox.innerText = "Please type a prompt first! 😭";
+    errorBox.innerText = "Type a prompt first! 😭";
     errorBox.style.display = "block";
     return;
   }
 
   btn.disabled = true;
-  statusBox.innerText = "Queued on GPU... real video diffusion takes 45-90 seconds ⏳";
   statusBox.style.display = "block";
 
+  const totalFrames = 6;
+  const baseSeed = Math.floor(Math.random() * 10000);
+
   try {
-    const seed = Math.floor(Math.random() * 1000000);
-    const encodedPrompt = encodeURIComponent(prompt);
-    
-    const videoEndpoint = `https://image.pollinations.ai/prompt/${encodedPrompt}?model=cogvideox&seed=${seed}`;
+    for (let i = 0; i < totalFrames; i++) {
+      statusBox.innerText = `Fetching frame ${i + 1} of ${totalFrames}... ⏳`;
+      
+      // Incremental seed so each frame shows a slight progression
+      const frameSeed = baseSeed + (i * 2);
+      const encodedPrompt = encodeURIComponent(`${prompt}, sequential frame ${i + 1}`);
+      const frameUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?seed=${frameSeed}&width=512&height=512&nologo=true`;
 
-    const res = await fetch(videoEndpoint);
+      const res = await fetch(frameUrl);
 
-    if (res.status === 429) {
-      throw new Error("Rate limit hit! Pollinations free GPU queue is full right now 😭💀");
-    }
-
-    if (!res.ok) {
-      throw new Error(`Server returned error code: ${res.status}`);
-    }
-
-    const contentType = res.headers.get("content-type") || "";
-
-    if (!contentType.includes("video") && !contentType.includes("octet-stream")) {
-      const text = await res.text();
-      if (text.startsWith("{") || text.includes("<html")) {
-        throw new Error("API returned an error instead of video data 💀: " + text.slice(0, 100));
+      if (res.status === 429) {
+        throw new Error("Rate limit hit on Pollinations! 😭💀");
       }
-      throw new Error(`Received '${contentType}' instead of an MP4 video file! 😭`);
-    }
 
-    const blob = await res.blob();
-    const videoBlob = new Blob([blob], { type: "video/mp4" });
-    const videoUrl = URL.createObjectURL(videoBlob);
+      if (!res.ok) {
+        throw new Error(`API failed on frame ${i + 1} with status ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(blob);
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error(`Failed to load frame ${i + 1} image data`));
+        img.src = objectUrl;
+      });
+
+      frames.push(img);
+    }
 
     statusBox.style.display = "none";
-    video.src = videoUrl;
-    video.style.display = "block";
-    video.load();
-    video.play().catch(() => {});
+    canvas.style.display = "block";
+    controlsBox.style.display = "flex";
+
+    currentFrameIndex = 0;
+    startPlayback();
 
   } catch (err) {
     statusBox.style.display = "none";
